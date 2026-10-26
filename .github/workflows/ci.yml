@@ -1,0 +1,41 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres: { image: postgres:16, env: { POSTGRES_DB: collabdesk, POSTGRES_USER: collabdesk, POSTGRES_PASSWORD: collabdesk }, ports: [5432:5432], options: >- --health-cmd "pg_isready -U collabdesk" --health-interval 5s --health-timeout 5s --health-retries 10 }
+      redis: { image: redis:7, ports: [6379:6379], options: >- --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements.txt
+      - run: python manage.py check --database default
+        env: { DJANGO_ENV: test, POSTGRES_HOST: localhost, POSTGRES_PORT: '5432' }
+      - run: python manage.py makemigrations --check --dry-run
+        env: { DJANGO_ENV: test, POSTGRES_HOST: localhost, POSTGRES_PORT: '5432' }
+      - run: python manage.py migrate --check
+        env: { DJANGO_ENV: test, POSTGRES_HOST: localhost, POSTGRES_PORT: '5432' }
+      - run: pytest
+        env: { DJANGO_ENV: test, POSTGRES_HOST: localhost, POSTGRES_PORT: '5432', REDIS_URL: redis://localhost:6379/0 }
+  browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: ASSISTANT_STREAM_TOKEN_DELAY_SECONDS=0.15 docker compose up --build -d --wait --wait-timeout 120
+      - run: docker compose exec -T api python manage.py seed_local_accounts --password local-demo-password
+      - run: npm run e2e
+        env: { E2E_BASE_URL: http://127.0.0.1:8000 }
+      - if: always()
+        run: docker compose logs --no-color
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore

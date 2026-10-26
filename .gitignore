@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.venv/
+htmlcov/
+coverage.xml
+*.sqlite3
+celerybeat-schedule
+node_modules/
+test-results/
+playwright-report/

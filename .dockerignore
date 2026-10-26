@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+.agents
+.codex
+.venv
+.pytest_cache
+__pycache__/
+*.py[cod]
+test.sqlite3

@@ -1,0 +1,165 @@
+{
+  "benchmark": "DJ-012 reporting and caching",
+  "cache_mode": "locmem",
+  "configuration": {
+    "cache_backend": "django.core.cache.backends.locmem.LocMemCache",
+    "cgroup_limits": {
+      "cpu_max": "max 100000",
+      "memory_max": "max"
+    },
+    "container": {
+      "cgroup": "0::/",
+      "dockerenv": true
+    },
+    "cpu_count": 12,
+    "database": {
+      "engine": "django.db.backends.postgresql",
+      "vendor": "postgresql"
+    },
+    "django": "5.2.18",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.41",
+    "python": "3.12.15"
+  },
+  "fixture": {
+    "admin_id": 15,
+    "agent_id": 14,
+    "created_messages": 66666,
+    "created_tickets": 100000,
+    "customer_id": 13,
+    "namespace": "dj012-postgres-100k-final",
+    "params": {
+      "agent_id": 14,
+      "end": "2024-12-31",
+      "granularity": "month",
+      "start": "2024-01-01"
+    },
+    "reused_messages": 0,
+    "reused_tickets": 0,
+    "seed": 12012,
+    "size": 100000
+  },
+  "measurements": {
+    "iterations_per_strategy": 5,
+    "live_aggregation": {
+      "cache": {
+        "hits": 0,
+        "misses": 0
+      },
+      "latency_ms": {
+        "max": 1661.609,
+        "min": 1634.829,
+        "p50": 1639.274,
+        "p95": 1661.609,
+        "p99": 1661.609
+      },
+      "operations": 5,
+      "query_count": {
+        "max": 1,
+        "min": 1,
+        "total": 5
+      },
+      "samples": [
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 1309.079,
+          "query_count": 1,
+          "result_total_tickets": 100000,
+          "wall_ms": 1661.609
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 1301.776,
+          "query_count": 1,
+          "result_total_tickets": 100000,
+          "wall_ms": 1634.829
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 1309.201,
+          "query_count": 1,
+          "result_total_tickets": 100000,
+          "wall_ms": 1638.578
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 1309.807,
+          "query_count": 1,
+          "result_total_tickets": 100000,
+          "wall_ms": 1658.095
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 1309.844,
+          "query_count": 1,
+          "result_total_tickets": 100000,
+          "wall_ms": 1639.274
+        }
+      ]
+    },
+    "precomputed_result_retrieval": {
+      "cache": {
+        "hits": 4,
+        "misses": 1
+      },
+      "latency_ms": {
+        "max": 0.897,
+        "min": 0.018,
+        "p50": 0.024,
+        "p95": 0.897,
+        "p99": 0.897
+      },
+      "operations": 5,
+      "query_count": {
+        "max": 1,
+        "min": 0,
+        "total": 1
+      },
+      "samples": [
+        {
+          "cache": "miss",
+          "cpu_ms": 0.636,
+          "query_count": 1,
+          "result_total_tickets": 100000,
+          "wall_ms": 0.897
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.031,
+          "query_count": 0,
+          "result_total_tickets": 100000,
+          "wall_ms": 0.03
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.022,
+          "query_count": 0,
+          "result_total_tickets": 100000,
+          "wall_ms": 0.021
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.025,
+          "query_count": 0,
+          "result_total_tickets": 100000,
+          "wall_ms": 0.024
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.019,
+          "query_count": 0,
+          "result_total_tickets": 100000,
+          "wall_ms": 0.018
+        }
+      ]
+    },
+    "resource_use": {
+      "measurement_system_cpu_seconds": 0.112807,
+      "measurement_user_cpu_seconds": 9.049802,
+      "process_max_rss_kb": 288300,
+      "rss_kb_after": 233536,
+      "rss_kb_before": 229572
+    },
+    "warmups_per_strategy": 2
+  },
+  "started_at": "2026-10-24T12:52:58.552273+00:00"
+}

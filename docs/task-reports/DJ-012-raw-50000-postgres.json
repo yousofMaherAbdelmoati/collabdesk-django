@@ -1,0 +1,165 @@
+{
+  "benchmark": "DJ-012 reporting and caching",
+  "cache_mode": "locmem",
+  "configuration": {
+    "cache_backend": "django.core.cache.backends.locmem.LocMemCache",
+    "cgroup_limits": {
+      "cpu_max": "max 100000",
+      "memory_max": "max"
+    },
+    "container": {
+      "cgroup": "0::/",
+      "dockerenv": true
+    },
+    "cpu_count": 12,
+    "database": {
+      "engine": "django.db.backends.postgresql",
+      "vendor": "postgresql"
+    },
+    "django": "5.2.18",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.41",
+    "python": "3.12.15"
+  },
+  "fixture": {
+    "admin_id": 9,
+    "agent_id": 8,
+    "created_messages": 33333,
+    "created_tickets": 50000,
+    "customer_id": 7,
+    "namespace": "dj012-postgres-50k",
+    "params": {
+      "agent_id": 8,
+      "end": "2024-12-31",
+      "granularity": "month",
+      "start": "2024-01-01"
+    },
+    "reused_messages": 0,
+    "reused_tickets": 0,
+    "seed": 12012,
+    "size": 50000
+  },
+  "measurements": {
+    "iterations_per_strategy": 5,
+    "live_aggregation": {
+      "cache": {
+        "hits": 0,
+        "misses": 0
+      },
+      "latency_ms": {
+        "max": 805.31,
+        "min": 788.939,
+        "p50": 796.078,
+        "p95": 805.31,
+        "p99": 805.31
+      },
+      "operations": 5,
+      "query_count": {
+        "max": 1,
+        "min": 1,
+        "total": 5
+      },
+      "samples": [
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 633.908,
+          "query_count": 1,
+          "result_total_tickets": 50000,
+          "wall_ms": 793.042
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 633.913,
+          "query_count": 1,
+          "result_total_tickets": 50000,
+          "wall_ms": 788.939
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 642.069,
+          "query_count": 1,
+          "result_total_tickets": 50000,
+          "wall_ms": 802.389
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 645.648,
+          "query_count": 1,
+          "result_total_tickets": 50000,
+          "wall_ms": 805.31
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 634.088,
+          "query_count": 1,
+          "result_total_tickets": 50000,
+          "wall_ms": 796.078
+        }
+      ]
+    },
+    "precomputed_result_retrieval": {
+      "cache": {
+        "hits": 4,
+        "misses": 1
+      },
+      "latency_ms": {
+        "max": 0.857,
+        "min": 0.017,
+        "p50": 0.02,
+        "p95": 0.857,
+        "p99": 0.857
+      },
+      "operations": 5,
+      "query_count": {
+        "max": 1,
+        "min": 0,
+        "total": 1
+      },
+      "samples": [
+        {
+          "cache": "miss",
+          "cpu_ms": 0.637,
+          "query_count": 1,
+          "result_total_tickets": 50000,
+          "wall_ms": 0.857
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.03,
+          "query_count": 0,
+          "result_total_tickets": 50000,
+          "wall_ms": 0.029
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.02,
+          "query_count": 0,
+          "result_total_tickets": 50000,
+          "wall_ms": 0.02
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.018,
+          "query_count": 0,
+          "result_total_tickets": 50000,
+          "wall_ms": 0.017
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.017,
+          "query_count": 0,
+          "result_total_tickets": 50000,
+          "wall_ms": 0.017
+        }
+      ]
+    },
+    "resource_use": {
+      "measurement_system_cpu_seconds": 0.03398,
+      "measurement_user_cpu_seconds": 4.399105,
+      "process_max_rss_kb": 191744,
+      "rss_kb_after": 167752,
+      "rss_kb_before": 165080
+    },
+    "warmups_per_strategy": 2
+  },
+  "started_at": "2026-10-24T12:50:06.753129+00:00"
+}

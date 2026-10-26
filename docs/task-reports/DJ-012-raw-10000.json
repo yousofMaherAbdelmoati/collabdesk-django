@@ -1,0 +1,165 @@
+{
+  "benchmark": "DJ-012 reporting and caching",
+  "cache_mode": "locmem",
+  "configuration": {
+    "cache_backend": "django.core.cache.backends.locmem.LocMemCache",
+    "cgroup_limits": {
+      "cpu_max": null,
+      "memory_max": null
+    },
+    "container": {
+      "cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/snap.code.code-80ed6297-28ed-48e5-b082-87ed0b0bd178.scope",
+      "dockerenv": false
+    },
+    "cpu_count": 12,
+    "database": {
+      "engine": "django.db.backends.sqlite3",
+      "vendor": "sqlite"
+    },
+    "django": "5.2.18",
+    "platform": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "fixture": {
+    "admin_id": 4,
+    "agent_id": 3,
+    "created_messages": 0,
+    "created_tickets": 0,
+    "customer_id": 2,
+    "namespace": "dj012-sqlite",
+    "params": {
+      "agent_id": 3,
+      "end": "2024-12-31",
+      "granularity": "month",
+      "start": "2024-01-01"
+    },
+    "reused_messages": 6666,
+    "reused_tickets": 10000,
+    "seed": 12012,
+    "size": 10000
+  },
+  "measurements": {
+    "iterations_per_strategy": 5,
+    "live_aggregation": {
+      "cache": {
+        "hits": 0,
+        "misses": 0
+      },
+      "latency_ms": {
+        "max": 161.017,
+        "min": 157.205,
+        "p50": 159.305,
+        "p95": 161.017,
+        "p99": 161.017
+      },
+      "operations": 5,
+      "query_count": {
+        "max": 1,
+        "min": 1,
+        "total": 5
+      },
+      "samples": [
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 157.2,
+          "query_count": 1,
+          "result_total_tickets": 10000,
+          "wall_ms": 157.205
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 159.087,
+          "query_count": 1,
+          "result_total_tickets": 10000,
+          "wall_ms": 159.098
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 159.79,
+          "query_count": 1,
+          "result_total_tickets": 10000,
+          "wall_ms": 159.808
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 159.289,
+          "query_count": 1,
+          "result_total_tickets": 10000,
+          "wall_ms": 159.305
+        },
+        {
+          "cache": "not_applicable",
+          "cpu_ms": 160.979,
+          "query_count": 1,
+          "result_total_tickets": 10000,
+          "wall_ms": 161.017
+        }
+      ]
+    },
+    "precomputed_result_retrieval": {
+      "cache": {
+        "hits": 4,
+        "misses": 1
+      },
+      "latency_ms": {
+        "max": 0.483,
+        "min": 0.016,
+        "p50": 0.019,
+        "p95": 0.483,
+        "p99": 0.483
+      },
+      "operations": 5,
+      "query_count": {
+        "max": 1,
+        "min": 0,
+        "total": 1
+      },
+      "samples": [
+        {
+          "cache": "miss",
+          "cpu_ms": 0.484,
+          "query_count": 1,
+          "result_total_tickets": 10000,
+          "wall_ms": 0.483
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.029,
+          "query_count": 0,
+          "result_total_tickets": 10000,
+          "wall_ms": 0.028
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.02,
+          "query_count": 0,
+          "result_total_tickets": 10000,
+          "wall_ms": 0.019
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.018,
+          "query_count": 0,
+          "result_total_tickets": 10000,
+          "wall_ms": 0.017
+        },
+        {
+          "cache": "hit",
+          "cpu_ms": 0.017,
+          "query_count": 0,
+          "result_total_tickets": 10000,
+          "wall_ms": 0.016
+        }
+      ]
+    },
+    "resource_use": {
+      "measurement_system_cpu_seconds": 0.011057,
+      "measurement_user_cpu_seconds": 1.102895,
+      "process_max_rss_kb": 381592,
+      "rss_kb_after": 118124,
+      "rss_kb_before": 113428
+    },
+    "warmups_per_strategy": 2
+  },
+  "started_at": "2026-10-24T12:48:38.168781+00:00"
+}

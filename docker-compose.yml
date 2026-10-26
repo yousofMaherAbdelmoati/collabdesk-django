@@ -1,0 +1,86 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-collabdesk}
+      POSTGRES_USER: ${POSTGRES_USER:-collabdesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-collabdesk}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [backend]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+
+  api:
+    build: .
+    environment:
+      DJANGO_DEBUG: "true"
+      DJANGO_ENV: development
+      POSTGRES_DB: ${POSTGRES_DB:-collabdesk}
+      POSTGRES_USER: ${POSTGRES_USER:-collabdesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-collabdesk}
+      POSTGRES_HOST: db
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-test_collabdesk}
+      REDIS_URL: redis://redis:6379/0
+      # Kept configurable so the browser E2E test can reliably exercise an
+      # in-progress stream cancellation without changing application code.
+      ASSISTANT_STREAM_TOKEN_DELAY_SECONDS: ${ASSISTANT_STREAM_TOKEN_DELAY_SECONDS:-0.005}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health/ready/', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # The API needs an edge network for its published localhost port while
+    # retaining access to the private PostgreSQL/Redis network.
+    networks: [backend, edge]
+
+  worker:
+    build: .
+    # Beat wakes the durable outbox publisher/watchdog; the DB remains the
+    # recovery source if Redis is temporarily unavailable.
+    command: celery -A config worker -B -l INFO
+    environment:
+      DJANGO_ENV: development
+      POSTGRES_DB: ${POSTGRES_DB:-collabdesk}
+      POSTGRES_USER: ${POSTGRES_USER:-collabdesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-collabdesk}
+      POSTGRES_HOST: db
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-test_collabdesk}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping --destination=celery@$$HOSTNAME --timeout=5"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
+    networks: [backend]
+
+networks:
+  backend:
+    internal: true
+  edge:
+
+volumes:
+  postgres_data:
