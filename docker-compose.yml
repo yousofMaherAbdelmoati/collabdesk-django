@@ -23,6 +23,23 @@ services:
       retries: 20
     networks: [backend]
 
+  migrate:
+    build: .
+    command: python manage.py migrate --noinput
+    environment:
+      DJANGO_DEBUG: "true"
+      DJANGO_ENV: development
+      POSTGRES_DB: ${POSTGRES_DB:-collabdesk}
+      POSTGRES_USER: ${POSTGRES_USER:-collabdesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-collabdesk}
+      POSTGRES_HOST: db
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-test_collabdesk}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+
   api:
     build: .
     environment:
@@ -36,12 +53,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       # Kept configurable so the browser E2E test can reliably exercise an
       # in-progress stream cancellation without changing application code.
-      ASSISTANT_STREAM_TOKEN_DELAY_SECONDS: ${ASSISTANT_STREAM_TOKEN_DELAY_SECONDS:-0.005}
+      ASSISTANT_STREAM_TOKEN_DELAY_SECONDS: ${ASSISTANT_STREAM_TOKEN_DELAY_SECONDS:-0.1}
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports: ["8000:8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health/ready/', timeout=3).read()"]
@@ -55,9 +70,9 @@ services:
 
   worker:
     build: .
-    # Beat wakes the durable outbox publisher/watchdog; the DB remains the
-    # recovery source if Redis is temporarily unavailable.
-    command: celery -A config worker -B -l INFO
+    # Beat is a separately supervised singleton; the DB remains the recovery
+    # source if Redis is temporarily unavailable.
+    command: celery -A config worker -l INFO
     environment:
       DJANGO_ENV: development
       POSTGRES_DB: ${POSTGRES_DB:-collabdesk}
@@ -75,6 +90,22 @@ services:
       timeout: 10s
       retries: 6
       start_period: 15s
+    networks: [backend]
+
+  beat:
+    build: .
+    command: celery -A config beat -l INFO --schedule /tmp/celerybeat-schedule
+    environment:
+      DJANGO_ENV: development
+      POSTGRES_DB: ${POSTGRES_DB:-collabdesk}
+      POSTGRES_USER: ${POSTGRES_USER:-collabdesk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-collabdesk}
+      POSTGRES_HOST: db
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-test_collabdesk}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      api:
+        condition: service_healthy
     networks: [backend]
 
 networks:

@@ -9,12 +9,13 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiTypes, extend_schema
 from .cache import cache_metrics, get_agent_statistics, get_ticket_statistics
 from .models import ConversationMessage, Ticket
 from .pagination import decode_cursor, encode_cursor, page_size
 from .serializers import AssistantRequestSerializer, MessageSerializer, StatusTransitionSerializer, TicketSerializer
 from .services import IdempotencyConflict, RequestInProgress, TicketConflict, claim_ticket, create_ticket_idempotently, resolve_ticket
-from .streaming import AssistantPrompt, DeterministicLocalProvider, assistant_sse_events
+from .streaming import AssistantDemoRequest, DeterministicLocalProvider, assistant_sse_events
 
 
 logger = logging.getLogger("collabdesk.ticket_api")
@@ -74,6 +75,8 @@ def paginated_messages(request, ticket: Ticket):
     next_cursor = encode_cursor({"kind": "messages", "ticket_id": ticket.id, "id": rows[-1].id}) if more and rows else None
     return Response({"results": MessageSerializer(rows, many=True).data, "next_cursor": next_cursor})
 
+@extend_schema(methods=["GET"], operation_id="ticket_list", request=None, responses={200: OpenApiTypes.OBJECT})
+@extend_schema(methods=["POST"], operation_id="ticket_create", request=TicketSerializer, responses={201: TicketSerializer})
 @api_view(["GET", "POST"])
 def tickets(request):
     if request.method == "GET":
@@ -103,6 +106,7 @@ def tickets(request):
         return api_error(str(exc), "request_in_progress", 409, headers={"Retry-After": "1"})
 
 
+@extend_schema(operation_id="ticket_statistics", request=None, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 def ticket_statistics(request):
     """Cache-aside dashboard totals; authorization is evaluated before caching."""
@@ -112,12 +116,14 @@ def ticket_statistics(request):
     return Response(payload)
 
 
+@extend_schema(operation_id="ticket_cache_metrics", request=None, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 def ticket_cache_metrics(request):
     if request.user.role != "admin":
         return api_error("Administrator role required", "role_forbidden", 403)
     return Response(cache_metrics())
 
+@extend_schema(operation_id="ticket_claim", request=None, responses={200: TicketSerializer})
 @api_view(["POST"])
 def claim(request, ticket_id: int):
     if request.user.role != "agent":
@@ -128,6 +134,7 @@ def claim(request, ticket_id: int):
         return api_error(str(exc), "ticket_conflict", 409)
 
 
+@extend_schema(operation_id="ticket_transition_status", request=StatusTransitionSerializer, responses={200: TicketSerializer})
 @api_view(["POST"])
 def transition_status(request, ticket_id: int):
     ticket = get_object_or_404(Ticket, id=ticket_id)
@@ -143,6 +150,8 @@ def transition_status(request, ticket_id: int):
     except TicketConflict as exc:
         return api_error(str(exc), "ticket_conflict", 409)
 
+@extend_schema(methods=["GET"], operation_id="ticket_message_list", request=None, responses={200: OpenApiTypes.OBJECT})
+@extend_schema(methods=["POST"], operation_id="ticket_message_create", request=MessageSerializer, responses={201: MessageSerializer})
 @api_view(["GET", "POST"])
 def messages(request, ticket_id: int):
     ticket = get_object_or_404(Ticket, id=ticket_id)
@@ -158,6 +167,7 @@ def messages(request, ticket_id: int):
     logger.info("message_create", extra={"event": "message_create", "outcome": "created" if created else "replayed"})
     return Response(MessageSerializer(obj).data, status=201 if created else 200)
 
+@extend_schema(operation_id="assistant_stream", request=AssistantRequestSerializer, responses={200: OpenApiTypes.STR})
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def assistant_stream(request):
@@ -168,7 +178,7 @@ def assistant_stream(request):
     provider = DeterministicLocalProvider(delay_seconds=settings.ASSISTANT_STREAM_TOKEN_DELAY_SECONDS)
     events = assistant_sse_events(
         provider,
-        AssistantPrompt(ticket_id=ticket.id, question=data.validated_data["question"]),
+        AssistantDemoRequest(ticket_id=ticket.id),
         timeout_seconds=settings.ASSISTANT_STREAM_TIMEOUT_SECONDS,
         max_chunks=settings.ASSISTANT_STREAM_MAX_CHUNKS,
         max_output_chars=settings.ASSISTANT_STREAM_MAX_OUTPUT_CHARS,
@@ -177,6 +187,7 @@ def assistant_stream(request):
     response["Cache-Control"] = "no-cache, no-transform"; response["X-Accel-Buffering"] = "no"
     return response
 
+@extend_schema(operation_id="health_liveness", request=None, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def liveness(_request):
@@ -184,6 +195,7 @@ def liveness(_request):
     return Response({"status": "ok"})
 
 
+@extend_schema(operation_id="health_readiness", request=None, responses={200: OpenApiTypes.OBJECT, 503: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def readiness(_request):
@@ -208,5 +220,9 @@ def readiness(_request):
     )
 
 
-# Retain the original health URL as a liveness alias for existing callers.
-health = liveness
+@extend_schema(exclude=True)
+@api_view(["GET"])
+@permission_classes([])
+def health(_request):
+    """Backward-compatible liveness alias, omitted from the canonical schema."""
+    return Response({"status": "ok"})

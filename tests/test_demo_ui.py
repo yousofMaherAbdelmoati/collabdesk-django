@@ -10,7 +10,9 @@ class DemoUiTests(TestCase):
         assert "CollabDesk local demo" in page
         assert 'id="login-form"' in page
         assert "WebSocket" in page
-        assert "Start stream" in page
+        assert "DEMO STREAM ONLY" in page
+        assert "Start demo stream" in page
+        assert 'id="assistant-question"' not in page
         assert "Reports &amp; cache" in page
         assert 'id="dev-test-panel"' in page
         # The panel invokes the normal ticket endpoints; it is not an

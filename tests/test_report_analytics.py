@@ -8,6 +8,7 @@ from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone as django_timezone
 from rest_framework.test import APIClient
+from rest_framework.exceptions import ValidationError
 
 from apps.desk.models import ConversationMessage, Ticket
 from apps.reports.models import AnalyticsSummary, ReportJob
@@ -80,6 +81,11 @@ def test_response_time_agent_activity_and_utc_buckets_are_correct(admin, custome
     }]
 
 
+def test_report_parameters_reject_unimplemented_filters():
+    with pytest.raises(ValidationError):
+        normalize_report_params({"scope": "all"})
+
+
 @pytest.mark.django_db(transaction=True)
 def test_worker_persists_result_and_daily_monthly_summaries_atomically(admin, customer, agent):
     ticket = Ticket.objects.create(customer=customer, assigned_agent=agent, status=Ticket.Status.CLAIMED, title="summary", description="fictional")
@@ -114,7 +120,7 @@ def test_each_materialized_bucket_has_its_own_agent_activity(admin, customer, ag
 
 @pytest.mark.django_db(transaction=True)
 def test_summary_is_invalidated_after_source_message_changes(admin, customer, agent):
-    ticket = Ticket.objects.create(customer=customer, assigned_agent=agent, title="invalidate", description="fictional")
+    ticket = Ticket.objects.create(customer=customer, assigned_agent=agent, status=Ticket.Status.CLAIMED, title="invalidate", description="fictional")
     created = datetime(2026, 6, 3, 10, tzinfo=timezone.utc)
     Ticket.objects.filter(id=ticket.id).update(created_at=created)
     job = ReportJob.objects.create(requested_by=admin, fingerprint="c" * 64, parameters=normalize_report_params({"start": "2026-06-03", "end": "2026-06-03"}))

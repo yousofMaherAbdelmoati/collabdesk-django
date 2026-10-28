@@ -8,6 +8,7 @@ from rest_framework.decorators import api_view, renderer_classes
 from rest_framework.exceptions import ValidationError
 from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiTypes, extend_schema
 
 from apps.desk.pagination import decode_cursor, encode_cursor, page_size
 from .models import ReportJob
@@ -103,6 +104,8 @@ def _paginated_reports(request):
     return Response({"results": [_serialize_job(job) for job in rows], "next_cursor": next_cursor})
 
 
+@extend_schema(methods=["GET"], operation_id="report_list", request=None, responses={200: OpenApiTypes.OBJECT})
+@extend_schema(methods=["POST"], operation_id="report_create", request=OpenApiTypes.OBJECT, responses={202: OpenApiTypes.OBJECT})
 @api_view(["GET", "POST"])
 def reports(request):
     if not require_admin(request):
@@ -113,6 +116,7 @@ def reports(request):
     return Response({"id": job.id, "status": job.status, "created": queued, "expires_at": job.expires_at}, status=202)
 
 
+@extend_schema(operation_id="report_detail", request=None, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 def report_detail(request, job_id):
     if not require_admin(request):
@@ -124,6 +128,7 @@ def report_detail(request, job_id):
     return Response({**_serialize_job(job), "result": result})
 
 
+@extend_schema(operation_id="report_download", request=None, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @renderer_classes([JSONRenderer, CSVNegotiationRenderer])
 def report_download(request, job_id):

@@ -7,12 +7,13 @@ from unittest.mock import patch
 import pytest
 from asgiref.testing import ApplicationCommunicator
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from config.asgi import application
 from apps.desk.models import Ticket
 from apps.desk.streaming import (
-    AssistantPrompt,
+    AssistantDemoRequest,
     DeterministicLocalProvider,
     assistant_sse_events,
     stream_metrics,
@@ -43,7 +44,7 @@ def test_local_provider_orders_tokens_and_completes():
         collect(
             assistant_sse_events(
                 DeterministicLocalProvider(delay_seconds=0),
-                AssistantPrompt(ticket_id=7, question="What happens next?"),
+                AssistantDemoRequest(ticket_id=7),
                 timeout_seconds=1,
                 max_chunks=32,
                 max_output_chars=4096,
@@ -53,7 +54,7 @@ def test_local_provider_orders_tokens_and_completes():
 
     token_events = [payload for event, payload in events if event == "token"]
     assert [payload["sequence"] for payload in token_events] == list(range(len(token_events)))
-    assert "".join(payload["text"] for payload in token_events).startswith("I have reviewed ticket 7.")
+    assert "".join(payload["text"] for payload in token_events).startswith("Demo stream only. Ticket 7 is selected.")
     assert events[-1] == ("complete", {"chunks": len(token_events), "truncated": False})
 
 
@@ -76,11 +77,11 @@ def test_stream_returns_error_events_for_provider_failure_and_timeout():
     failing = FailingProvider()
     with patch("apps.desk.streaming.logger.error") as error:
         failed_events = asyncio.run(
-            collect(assistant_sse_events(failing, AssistantPrompt(1, "q"), timeout_seconds=1, max_chunks=1, max_output_chars=10))
+            collect(assistant_sse_events(failing, AssistantDemoRequest(1), timeout_seconds=1, max_chunks=1, max_output_chars=10))
         )
     slow = SlowProvider()
     timeout_events = asyncio.run(
-        collect(assistant_sse_events(slow, AssistantPrompt(1, "q"), timeout_seconds=0.01, max_chunks=1, max_output_chars=10))
+        collect(assistant_sse_events(slow, AssistantDemoRequest(1), timeout_seconds=0.01, max_chunks=1, max_output_chars=10))
     )
 
     assert failed_events == [("error", {"code": "stream_failed"})]
@@ -94,7 +95,7 @@ def test_stream_enforces_chunk_and_character_limits():
         collect(
             assistant_sse_events(
                 DeterministicLocalProvider(delay_seconds=0),
-                AssistantPrompt(1, "one two three four"),
+                AssistantDemoRequest(1),
                 timeout_seconds=1,
                 max_chunks=2,
                 max_output_chars=7,
@@ -125,7 +126,7 @@ def test_disconnect_cancels_pending_provider_and_closes_within_bound():
 
     async def disconnect() -> None:
         provider = BlockingProvider()
-        stream = assistant_sse_events(provider, AssistantPrompt(1, "q"), timeout_seconds=10, max_chunks=32, max_output_chars=100)
+        stream = assistant_sse_events(provider, AssistantDemoRequest(1), timeout_seconds=10, max_chunks=32, max_output_chars=100)
         assert parse_frame(await anext(stream))[0] == "token"
         pending = asyncio.create_task(anext(stream))
         await provider.waiting.wait()
@@ -137,7 +138,7 @@ def test_disconnect_cancels_pending_provider_and_closes_within_bound():
     asyncio.run(disconnect())
 
 
-def test_twelve_concurrent_async_streams_do_not_serialize_and_do_not_log_prompt():
+def test_twelve_concurrent_async_streams_do_not_serialize_and_do_not_log_request_content():
     async def run_concurrently() -> tuple[float, list[list[tuple[str, dict]]]]:
         stream_metrics.reset()
         started = time.monotonic()
@@ -145,7 +146,7 @@ def test_twelve_concurrent_async_streams_do_not_serialize_and_do_not_log_prompt(
             collect(
                 assistant_sse_events(
                     DeterministicLocalProvider(delay_seconds=0.02),
-                    AssistantPrompt(index, "fictional-secret-question"),
+                    AssistantDemoRequest(index),
                     timeout_seconds=2,
                     max_chunks=4,
                     max_output_chars=4096,
@@ -164,10 +165,11 @@ def test_twelve_concurrent_async_streams_do_not_serialize_and_do_not_log_prompt(
     assert elapsed < 0.6
     assert all(events[-1][0] == "complete" for events in results)
     assert stream_metrics.snapshot()["max_active"] >= 12
-    assert "fictional-secret-question" not in str(info.call_args_list)
+    assert "ticket_id" not in str(info.call_args_list)
 
 
 @pytest.mark.django_db(transaction=True)
+@override_settings(ASSISTANT_STREAM_TOKEN_DELAY_SECONDS=0)
 def test_twelve_concurrent_sse_requests_stream_through_asgi(customer):
     """Exercise Django's ASGI response iterator, not merely the provider."""
     ticket = Ticket.objects.create(customer=customer, title="t", description="d")
@@ -176,7 +178,7 @@ def test_twelve_concurrent_sse_requests_stream_through_asgi(customer):
     browser.get("/api/auth/csrf/")
     cookie_header = "; ".join(f"{name}={morsel.value}" for name, morsel in browser.cookies.items()).encode()
     csrf_token = browser.cookies["csrftoken"].value.encode()
-    body = json.dumps({"ticket_id": ticket.id, "question": "What next?"}).encode()
+    body = json.dumps({"ticket_id": ticket.id}).encode()
 
     def communicator() -> ApplicationCommunicator:
         return ApplicationCommunicator(

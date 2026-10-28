@@ -15,7 +15,6 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class AssistantRequestSerializer(serializers.Serializer):
     ticket_id = serializers.IntegerField()
-    question = serializers.CharField(max_length=2000)
 
 
 class StatusTransitionSerializer(serializers.Serializer):

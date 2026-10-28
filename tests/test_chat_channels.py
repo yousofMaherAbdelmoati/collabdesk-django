@@ -193,7 +193,9 @@ def test_permission_revocation_blocks_future_events_and_returns_structured_error
         await _open(agent_socket)
         # The DB change stands in for a concurrent assignment revocation.
         # The next inbound event must reauthorize rather than trust connect.
-        await database_sync_to_async(Ticket.objects.filter(id=ticket.id).update)(assigned_agent=None)
+        await database_sync_to_async(Ticket.objects.filter(id=ticket.id).update)(
+            assigned_agent=None, status=Ticket.Status.OPEN
+        )
         await agent_socket.send_json_to({"type": "history", "after": 0})
         error = await agent_socket.receive_json_from()
         assert error["type"] == "error"

@@ -1,6 +1,7 @@
 import uuid
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 class Ticket(models.Model):
@@ -18,6 +19,15 @@ class Ticket(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     class Meta:
         indexes = [models.Index(fields=["status", "created_at"]), models.Index(fields=["customer", "created_at"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(status="open", assigned_agent__isnull=True)
+                    | Q(status__in=["claimed", "resolved"], assigned_agent__isnull=False)
+                ),
+                name="ticket_status_requires_matching_assignment",
+            ),
+        ]
 
 class ConversationMessage(models.Model):
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="messages")
@@ -33,14 +43,12 @@ class ConversationMessage(models.Model):
 
 class ConversationReadReceipt(models.Model):
     """A durable, per-reader acknowledgement for a conversation message."""
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="read_receipts")
     message = models.ForeignKey(ConversationMessage, on_delete=models.CASCADE, related_name="read_receipts")
     reader = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="message_read_receipts")
     read_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["message", "reader"], name="unique_message_reader_receipt")]
-        indexes = [models.Index(fields=["ticket", "reader", "message"], name="desk_conver_ticket__b6b315_idx")]
 
 class IdempotencyRecord(models.Model):
     class State(models.TextChoices):

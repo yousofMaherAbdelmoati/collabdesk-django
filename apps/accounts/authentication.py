@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import authentication, exceptions
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
 from .models import ExpiringToken
 
@@ -49,3 +50,13 @@ class ExpiringTokenAuthentication(authentication.BaseAuthentication):
 
     def authenticate_header(self, request):
         return self.keyword
+
+
+class ExpiringTokenAuthenticationScheme(OpenApiAuthenticationExtension):
+    """Describe the custom short-lived bearer credential in OpenAPI."""
+
+    target_class = "apps.accounts.authentication.ExpiringTokenAuthentication"
+    name = "BearerAuth"
+
+    def get_security_definition(self, auto_schema):
+        return {"type": "http", "scheme": "bearer", "bearerFormat": "opaque"}

@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from drf_spectacular.utils import OpenApiTypes, extend_schema
 
 from .authentication import issue_token
 from .models import ExpiringToken
@@ -24,6 +25,7 @@ def _ip_fingerprint(request):
     return hashlib.sha256(f"{settings.SECRET_KEY}:login:{value}".encode()).hexdigest()
 
 
+@extend_schema(operation_id="auth_csrf", request=None, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([AllowAny])
 @ensure_csrf_cookie
@@ -32,6 +34,7 @@ def csrf(request):
     return Response({"detail": "CSRF cookie set"})
 
 
+@extend_schema(operation_id="auth_login", request=LoginSerializer, responses={200: OpenApiTypes.OBJECT})
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login_view(request):
@@ -69,6 +72,7 @@ def login_view(request):
     return Response(payload)
 
 
+@extend_schema(operation_id="auth_logout", request=None, responses={204: None})
 @api_view(["POST"])
 def logout_view(request):
     # Revoke only the bearer credential presented by this request. Other API

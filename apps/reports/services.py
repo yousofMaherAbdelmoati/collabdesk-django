@@ -21,7 +21,7 @@ from .models import AnalyticsSummary, ReportJob
 
 
 UTC = datetime_timezone.utc
-_REPORT_FILTERS = {"start", "end", "status", "statuses", "agent_id", "granularity", "refresh", "period"}
+_REPORT_FILTERS = {"start", "end", "status", "statuses", "agent_id", "granularity", "refresh"}
 
 
 def _date_value(value, field: str) -> date:
@@ -41,12 +41,9 @@ def normalize_report_params(params: dict | None) -> dict:
         params = {}
     if not isinstance(params, dict):
         raise ValidationError({"detail": ["Report parameters must be an object."]})
-    # Preserve JSON-compatible extension keys in the fingerprint. Older
-    # callers used opaque selectors (for example ``scope``), and retaining
-    # them avoids turning a harmless upgrade into an HTTP validation break.
-    # They intentionally do not alter the built-in ticket query until a
-    # corresponding filter is explicitly implemented.
     extensions = set(params) - _REPORT_FILTERS
+    if extensions:
+        raise ValidationError({"detail": [f"Unsupported report parameters: {', '.join(sorted(extensions))}."]})
 
     normalized: dict[str, object] = {"granularity": params.get("granularity", "day")}
     if normalized["granularity"] not in {"day", "month"}:
@@ -90,16 +87,6 @@ def normalize_report_params(params: dict | None) -> dict:
         raise ValidationError({"refresh": ["Use true or false."]})
     if refresh:
         normalized["refresh"] = True
-    # Existing callers used this opaque value. Retain it without changing
-    # query semantics while clients migrate to explicit date filters.
-    if params.get("period") not in (None, ""):
-        normalized["period"] = str(params["period"])
-    for key in sorted(extensions):
-        try:
-            json.dumps(params[key], sort_keys=True, separators=(",", ":"))
-        except (TypeError, ValueError) as exc:
-            raise ValidationError({key: ["Must be JSON-serializable."]}) from exc
-        normalized[key] = params[key]
     return normalized
 
 
@@ -164,7 +151,7 @@ def _source_queryset(params: dict):
     return queryset
 
 
-def _metrics_for(params: dict) -> dict:
+def _metrics_for(params: dict, *, include_bucket_agent_activity: bool = False) -> dict:
     """Compute metrics with maintained ORM expressions, never ``.extra()``."""
     bucket = TruncMonth("created_at", tzinfo=UTC) if params["granularity"] == "month" else TruncDate("created_at", tzinfo=UTC)
     first_response = ConversationMessage.objects.filter(
@@ -179,7 +166,7 @@ def _metrics_for(params: dict) -> dict:
     agents: dict[int, dict] = {}
     for row in rows:
         period = row["bucket_start"].date() if isinstance(row["bucket_start"], datetime) else row["bucket_start"]
-        metric = buckets.setdefault(period, {"period": period.isoformat(), "total_tickets": 0, "by_status": {status: 0 for status in Ticket.Status.values}, "_response_seconds": []})
+        metric = buckets.setdefault(period, {"period": period.isoformat(), "total_tickets": 0, "by_status": {status: 0 for status in Ticket.Status.values}, "_response_seconds": [], "_agents": {}})
         metric["total_tickets"] += 1
         metric["by_status"][row["status"]] += 1
         response_seconds = None
@@ -188,23 +175,35 @@ def _metrics_for(params: dict) -> dict:
             metric["_response_seconds"].append(response_seconds)
         if row["assigned_agent_id"] is not None:
             activity = agents.setdefault(row["assigned_agent_id"], {"agent_id": row["assigned_agent_id"], "assigned_tickets": 0, "resolved_tickets": 0, "responded_tickets": 0, "_response_seconds": []})
+            bucket_activity = metric["_agents"].setdefault(row["assigned_agent_id"], {"agent_id": row["assigned_agent_id"], "assigned_tickets": 0, "resolved_tickets": 0, "responded_tickets": 0, "_response_seconds": []})
             activity["assigned_tickets"] += 1
+            bucket_activity["assigned_tickets"] += 1
             if row["status"] == Ticket.Status.RESOLVED:
                 activity["resolved_tickets"] += 1
+                bucket_activity["resolved_tickets"] += 1
             if response_seconds is not None:
                 activity["responded_tickets"] += 1
                 activity["_response_seconds"].append(response_seconds)
+                bucket_activity["responded_tickets"] += 1
+                bucket_activity["_response_seconds"].append(response_seconds)
 
     def finish(metric: dict) -> dict:
         seconds = metric.pop("_response_seconds")
         metric["response_time"] = {"responded_tickets": len(seconds), "average_seconds": round(sum(seconds) / len(seconds), 3) if seconds else None}
         return metric
 
-    result_buckets = [finish(buckets[key]) for key in sorted(buckets)]
+    result_buckets = []
+    for key in sorted(buckets):
+        bucket_metric = buckets[key]
+        bucket_agents = bucket_metric.pop("_agents")
+        finished_bucket = finish(bucket_metric)
+        if include_bucket_agent_activity:
+            finished_bucket["agent_activity"] = [finish(bucket_agents[agent_id]) for agent_id in sorted(bucket_agents)]
+        result_buckets.append(finished_bucket)
     result_agents = [finish(agents[key]) for key in sorted(agents)]
     return {
         "aggregation_timezone": "UTC", "granularity": params["granularity"],
-        "filters": {key: value for key, value in params.items() if key not in {"refresh", "period"}},
+        "filters": {key: value for key, value in params.items() if key != "refresh"},
         "time_buckets": result_buckets, "agent_activity": result_agents,
         "total_tickets": sum(item["total_tickets"] for item in result_buckets),
     }
@@ -219,7 +218,7 @@ def compute_report(job: ReportJob) -> dict:
 def compute_precomputed_summaries(job: ReportJob) -> list[tuple[str, date, dict]]:
     """Build global daily/monthly buckets for the period a report touched."""
     parameters = normalize_report_params(job.parameters)
-    base = {key: value for key, value in parameters.items() if key not in {"statuses", "agent_id", "refresh", "period", "granularity"}}
+    base = {key: value for key, value in parameters.items() if key not in {"statuses", "agent_id", "refresh", "granularity"}}
     return compute_summary_rows(base)
 
 
@@ -227,27 +226,11 @@ def compute_summary_rows(base: dict) -> list[tuple[str, date, dict]]:
     """Return global materialized rows with activity scoped to each bucket."""
     summaries = []
     for granularity in (AnalyticsSummary.Granularity.DAY, AnalyticsSummary.Granularity.MONTH):
-        selected = _metrics_for({**base, "granularity": granularity})
+        selected = _metrics_for({**base, "granularity": granularity}, include_bucket_agent_activity=True)
         for selected_bucket in selected["time_buckets"]:
             period_start = date.fromisoformat(selected_bucket["period"])
-            if granularity == AnalyticsSummary.Granularity.DAY:
-                period_end = period_start
-            elif period_start.month == 12:
-                period_end = date(period_start.year + 1, 1, 1) - timedelta(days=1)
-            else:
-                period_end = date(period_start.year, period_start.month + 1, 1) - timedelta(days=1)
-            # A materialized bucket represents the complete UTC calendar
-            # period, not all activity from the request range that happened to
-            # include it.
-            scoped = _metrics_for({
-                **base,
-                "start": period_start.isoformat(),
-                "end": period_end.isoformat(),
-                "granularity": granularity,
-            })
-            if scoped["time_buckets"]:
-                bucket = scoped["time_buckets"][0]
-                summaries.append((granularity, period_start, {**bucket, "agent_activity": scoped["agent_activity"]}))
+            bucket = dict(selected_bucket)
+            summaries.append((granularity, period_start, bucket))
     return summaries
 
 

@@ -30,8 +30,9 @@ token is stored or placed in a URL.
   Django Channels conversation in both browser profiles. Each reconnect asks
   for message history after the last durable message id; received messages are
   acknowledged with read states.
-- Select **Assistant** after selecting a ticket to start or cancel the bounded,
-  deterministic local SSE stream.
+- Select **Assistant** after selecting a ticket to start or cancel the deliberately
+  slow, bounded deterministic local SSE demo. It accepts no prompt or user-entered
+  text and does not use an AI provider.
 - As **demo-admin**, select **Reports & cache** to request an asynchronous
   report, poll its status, and view ticket-cache hit/miss display.
 
@@ -44,15 +45,15 @@ WebSocket reconnects, report polling, and stream/request errors.
 
 Use `GET /api/health/live/` for a process liveness probe (it deliberately does not query dependencies), and `GET /api/health/ready/` for readiness. Readiness returns `200` only after PostgreSQL and Redis can both answer requests; otherwise it returns `503` with dependency status. `/api/health/` remains a liveness alias for compatibility.
 
-The API container applies migrations before Daphne starts. The worker waits for API readiness, so it cannot begin consuming jobs before migrations and dependencies are available. Do not run `docker compose down -v` unless you intentionally want to remove local database data.
+The one-off `migrate` Compose service applies migrations before Daphne starts. The worker and separately supervised Beat scheduler wait for API readiness, so they cannot begin consuming jobs before migrations and dependencies are available. Do not run `docker compose down -v` unless you intentionally want to remove local database data.
 
 ## Engineering evidence
 
-- `POST /api/tickets` requires `Idempotency-Key`. `IdempotencyRecord` has a database uniqueness constraint scoped to user, operation, and key. The ticket, outbox event, and completed response are committed in one transaction. A different request fingerprint conflicts; completed calls replay the stored response. A transaction crash rolls all of it back, while a crash after commit replays safely. Records expire after 24 hours and can be removed with `python manage.py cleanup_idempotency_records`; schedule that command in deployment operations.
+- `POST /api/tickets` requires `Idempotency-Key`. `IdempotencyRecord` has a database uniqueness constraint scoped to user, operation, and key. The ticket, outbox event, and completed response are committed in one transaction. A different request fingerprint conflicts; completed calls replay the stored response. A transaction crash rolls all of it back, while a crash after commit replays safely. Records expire after 24 hours; the scheduled `cleanup-expired-idempotency-records` task removes them.
 - `POST /api/tickets/{id}/claim` is a single conditional PostgreSQL `UPDATE`: only `open` and unassigned rows change. That is safe across web processes; without it, two read-then-write claimers could both report success.
 - `POST /api/tickets/{id}/status` performs a conditional `claimed -> resolved` transition using the assigned agent's `expected_version`; stale or competing transitions receive a conflict.
 - Ticket and message lists return `{results, next_cursor}` and use signed keyset cursors. Chat persists messages before broadcasting. `(ticket, client_message_id)` is unique, so browser retries are idempotent. Redis Channels distributes notifications but is not treated as durable delivery; clients fetch the message list with its returned cursor after reconnect (`after=<id>` remains compatible for existing clients). The WebSocket protocol uses authenticated message, typing, read, and history/sync events; a history response is ordered by ascending message id and includes results, next_cursor, has_more, limit, and after. Client errors are structured as a type, code, and detail.
-- `POST /api/assistant/stream` emits framed SSE `token`, `complete`, and error events from a deterministic local simulator. It uses a bounded 32-chunk response; client disconnect closes the generator.
+- `POST /api/assistant/stream` accepts only a ticket id and emits framed SSE `token`, `complete`, and error events from a fixed deterministic local simulator. It is solely a streaming/cancellation demonstration: it accepts no prompts, processes no user-entered text, and uses no AI provider. Client disconnect closes the generator.
 - `GET /api/tickets/stats` provides cache-aside ticket totals for the current authenticated user and, for agents, their own assignment totals. Keys are namespaced (`CACHE_NAMESPACE`) and versioned (`CACHE_VERSION`), have a configurable `TICKET_STATS_CACHE_TTL_SECONDS`, include the user id and role, and use a short Redis ownership lock to reduce concurrent cold-query fan-out. Ticket and message commits advance a generation key so old totals cannot be read. Redis failure or lock contention always falls back to PostgreSQL; neither cached statistics nor locks authorize users or enforce workflow correctness. Administrators can inspect best-effort `GET /api/tickets/cache-metrics` hit/miss counters.
 - `ReportJob` and its `report.run` outbox event commit together. The periodic publisher and stale-job watchdog use database leases, heartbeats, bounded exponential backoff, and terminal attempt limits. Celery can deliver a task more than once (including after a publisher crash between broker acceptance and the database acknowledgement); token-guarded report completion makes the persisted result idempotent. The database result and UTC daily/monthly aggregate summaries commit before the optional Redis cache write. Results expire after `REPORT_RESULT_TTL_SECONDS`; expiration clears the durable output and cache, while `refresh: true` requests new work. This is deliberately at-least-once, not exactly-once delivery.
 - Admins may create filtered reports with `start`, `end`, `statuses`, `agent_id`, and `granularity` (`day`/`month`), list report jobs through signed cursor pagination, and download a ready result from `GET /api/reports/{id}/download?format=json|csv`. First response time is measured only from ticket creation to the first message sent by its assigned agent; report buckets use UTC.
@@ -206,8 +207,9 @@ command and inspection result are recorded in [DJ-011](docs/task-reports/DJ-011.
   major-version upgrade was made during this documentation gate; resolve and
   retest those advisories before any production use.
 - Deployment operators must provide a unique `DJANGO_SECRET_KEY`, TLS, trusted
-  host/origin configuration, secret management, retention/backup policies, and
-  schedule the idempotency cleanup command. Do not use demo credentials or the
+  host/origin configuration, secret management, and retention/backup policies.
+  Production settings fail closed when debug, local hosts/origins, HTTPS
+  protection, or secure cookies are misconfigured. Do not use demo credentials or the
   example Compose password outside local development.
 
 ### Verified CV bullets

@@ -220,7 +220,7 @@ class TicketConsumer(AsyncWebsocketConsumer):
             if message.sender_id == self.user.id:
                 raise ProtocolError("invalid_read_receipt", "A sender cannot read-receipt their own message")
             receipt, created = ConversationReadReceipt.objects.get_or_create(
-                message=message, reader=self.user, defaults={"ticket_id": self.ticket_id}
+                message=message, reader=self.user
             )
             if created and message.read_at is None:
                 message.read_at = receipt.read_at

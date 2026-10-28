@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connections
+from django.test import override_settings
 from rest_framework.test import APIClient
 from apps.desk.models import Ticket
 
@@ -109,9 +110,10 @@ def test_message_ownership_and_deduplication(customer, agent):
     assert c.post(f"/api/tickets/{ticket.id}/messages", {"client_message_id":mid,"body":"hello"}, format="json").status_code == 200
 
 @pytest.mark.django_db
+@override_settings(ASSISTANT_STREAM_TOKEN_DELAY_SECONDS=0)
 def test_stream_has_ordered_tokens(customer):
     ticket = Ticket.objects.create(customer=customer, title="t", description="d")
-    r = client_for(customer).post("/api/assistant/stream", {"ticket_id": ticket.id, "question": "What next?"}, format="json")
+    r = client_for(customer).post("/api/assistant/stream", {"ticket_id": ticket.id}, format="json")
     assert r["Content-Type"].startswith("text/event-stream")
 
     async def consume():

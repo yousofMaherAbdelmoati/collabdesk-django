@@ -30,6 +30,7 @@ class ReportJob(models.Model):
             models.Index(fields=["fingerprint", "status"]),
             models.Index(fields=["status", "next_attempt_at"], name="reports_rep_status_fd43e7_idx"),
             models.Index(fields=["expires_at"], name="reports_rep_expires_5d2b8c_idx"),
+            models.Index(fields=["created_at"], name="reports_rep_created_41b0f8_idx"),
         ]
         constraints = [
             # This is the race-free part of de-duplication. Application-level

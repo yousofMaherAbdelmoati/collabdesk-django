@@ -76,10 +76,9 @@ test("customer and agent complete the live support workflow", async ({ browser }
     await expect(agent.locator("#messages")).toContainText(agentMessage);
 
     await customer.getByRole("button", { name: "Assistant" }).click();
-    await customer.locator("#assistant-question").fill(`Cancel this fictional stream ${runId}`);
-    await customer.getByRole("button", { name: "Start stream" }).click();
+    await customer.getByRole("button", { name: "Start demo stream" }).click();
     await expect(customer.locator("#assistant-cancel")).toBeVisible();
-    await expect(customer.locator("#assistant-output")).toContainText("I ");
+    await expect(customer.locator("#assistant-output")).toContainText("Demo ");
     await customer.getByRole("button", { name: "Cancel stream" }).click();
     await expect(customer.locator("#assistant-output")).toContainText("Stream cancelled locally.");
 

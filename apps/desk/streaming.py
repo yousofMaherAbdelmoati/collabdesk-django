@@ -20,15 +20,14 @@ logger = logging.getLogger("collabdesk.ticket_api")
 
 
 @dataclass(frozen=True)
-class AssistantPrompt:
+class AssistantDemoRequest:
     ticket_id: int
-    question: str
 
 
 class AsyncResponseProvider(Protocol):
     """A response source which cooperatively releases resources on close."""
 
-    def stream(self, prompt: AssistantPrompt) -> AsyncIterator[str]: ...
+    def stream(self, request: AssistantDemoRequest) -> AsyncIterator[str]: ...
 
     async def aclose(self) -> None: ...
 
@@ -43,10 +42,11 @@ class DeterministicLocalProvider:
     async def aclose(self) -> None:
         self.closed = True
 
-    async def stream(self, prompt: AssistantPrompt) -> AsyncIterator[str]:
+    async def stream(self, request: AssistantDemoRequest) -> AsyncIterator[str]:
         response = (
-            f"I have reviewed ticket {prompt.ticket_id}. {prompt.question} "
-            "A support agent will use the ticket history to provide next steps."
+            f"Demo stream only. Ticket {request.ticket_id} is selected. "
+            "This fixed local response exists solely to demonstrate SSE delivery and cancellation. "
+            "A support agent will provide next steps."
         )
         for word in response.split():
             # asyncio.sleep yields control to the ASGI event loop.  This is
@@ -59,7 +59,7 @@ class DeterministicLocalProvider:
 class StreamMetrics:
     """Small process-local counters safe to expose to an observability adapter.
 
-    Stream payloads, prompts, ticket ids, and user ids are deliberately not
+    Stream payloads, ticket ids, and user ids are deliberately not
     retained.  The counters diagnose capacity and failure mode without logging
     message content.
     """
@@ -123,7 +123,7 @@ def sse_frame(event: str, payload: dict[str, object]) -> bytes:
 
 async def assistant_sse_events(
     provider: AsyncResponseProvider,
-    prompt: AssistantPrompt,
+    request: AssistantDemoRequest,
     *,
     timeout_seconds: float,
     max_chunks: int,
@@ -140,7 +140,7 @@ async def assistant_sse_events(
     try:
         try:
             async with asyncio.timeout(timeout_seconds):
-                async for text in provider.stream(prompt):
+                async for text in provider.stream(request):
                     if chunks >= max_chunks or output_chars >= max_output_chars:
                         outcome = "limited"
                         break
@@ -181,7 +181,7 @@ async def assistant_sse_events(
         except Exception:
             outcome = "error"
             # Do not attach provider exception text: a provider may include
-            # prompt or response content in its exception message.
+            # response content in its exception message.
             logger.error("assistant_stream", extra={"event": "assistant_stream", "outcome": outcome})
             yield sse_frame("error", {"code": "stream_failed"})
     finally:

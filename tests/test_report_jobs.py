@@ -29,7 +29,7 @@ def admin(db):
 @pytest.mark.django_db
 def test_request_commits_job_and_outbox_before_best_effort_wake(admin):
     with patch("apps.reports.tasks.wake_outbox_publisher"):
-        job, created = request_report(user=admin, params={"period": "fictional"})
+        job, created = request_report(user=admin, params={})
 
     assert created is True
     event = OutboxEvent.objects.get()
@@ -42,7 +42,7 @@ def test_request_commits_job_and_outbox_before_best_effort_wake(admin):
 def test_redis_celery_wake_outage_does_not_lose_committed_dispatch(admin):
     # The request transaction must not depend on Redis accepting the hint.
     with patch("apps.reports.tasks.publish_outbox_events.delay", side_effect=OSError("fictional Redis outage")):
-        job, created = request_report(user=admin, params={"period": "fictional outage"})
+        job, created = request_report(user=admin, params={})
 
     assert created is True
     assert ReportJob.objects.filter(id=job.id, status=ReportJob.Status.QUEUED).exists()
@@ -215,7 +215,7 @@ def test_competing_report_requests_have_one_active_row(admin):
     def request(_):
         try:
             with patch("apps.reports.tasks.wake_outbox_publisher"):
-                return request_report(user=admin, params={"scope": "fictional"})
+                return request_report(user=admin, params={})
         finally:
             connections.close_all()
 

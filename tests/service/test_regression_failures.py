@@ -270,14 +270,14 @@ def test_twenty_process_report_requests_create_one_active_job(round_number):
     admin = get_user_model().objects.create_user(
         username=f"dj009-report-{round_number}", password="x", role="admin"
     )
-    params = {"period": f"fictional-process-round-{round_number}"}
+    params = {}
     results = _run_processes(
         [{"action": "report", "user_id": admin.id, "params": params}] * 20
     )
 
     assert sum(result["created"] for result in results) == 1
     assert len({result["id"] for result in results}) == 1
-    assert ReportJob.objects.filter(parameters__period=params["period"], status=ReportJob.Status.QUEUED).count() == 1
+    assert ReportJob.objects.filter(parameters=params, status=ReportJob.Status.QUEUED).count() == 1
 
 
 @pytest.mark.service

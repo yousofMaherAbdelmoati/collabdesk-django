@@ -7,9 +7,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DJANGO_ENV = os.getenv("DJANGO_ENV", "").lower()
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-development-only-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
-if SECRET_KEY == "unsafe-development-only-change-me" and DJANGO_ENV not in {"development", "dev", "local", "test"}:
+LOCAL_ENVS = {"development", "dev", "local", "test"}
+PRODUCTION_ENVS = {"production", "prod", "staging", "stage"}
+IS_LOCAL_ENV = DJANGO_ENV in LOCAL_ENVS
+IS_PRODUCTION = DJANGO_ENV in PRODUCTION_ENVS
+if not IS_LOCAL_ENV and not IS_PRODUCTION:
+    raise ImproperlyConfigured("DJANGO_ENV must be one of development, test, staging, or production")
+if SECRET_KEY == "unsafe-development-only-change-me" and not IS_LOCAL_ENV:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set outside local development and tests")
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured("DJANGO_DEBUG must be false in production")
+ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()]
+if not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must contain at least one host")
+if IS_PRODUCTION and ("*" in ALLOWED_HOSTS or any(host in {"localhost", "127.0.0.1"} for host in ALLOWED_HOSTS)):
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be explicit and must not use local defaults in production")
 INSTALLED_APPS = [
     "daphne", "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
@@ -21,6 +33,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware", "config.middleware.RestrictedCORSMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware", "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIRS": [BASE_DIR / "frontend"], "APP_DIRS": True, "OPTIONS": {"context_processors": ["django.template.context_processors.request", "django.contrib.auth.context_processors.auth", "django.contrib.messages.context_processors.messages"]}}]
@@ -107,6 +120,7 @@ OUTBOX_PUBLISH_INTERVAL_SECONDS = int(os.getenv("OUTBOX_PUBLISH_INTERVAL_SECONDS
 REPORT_RECOVERY_INTERVAL_SECONDS = int(os.getenv("REPORT_RECOVERY_INTERVAL_SECONDS", "15"))
 REPORT_RESULT_TTL_SECONDS = int(os.getenv("REPORT_RESULT_TTL_SECONDS", str(24 * 60 * 60)))
 REPORT_SUMMARY_REFRESH_INTERVAL_SECONDS = int(os.getenv("REPORT_SUMMARY_REFRESH_INTERVAL_SECONDS", str(60 * 60)))
+IDEMPOTENCY_CLEANUP_INTERVAL_SECONDS = int(os.getenv("IDEMPOTENCY_CLEANUP_INTERVAL_SECONDS", str(24 * 60 * 60)))
 if (
     REPORT_JOB_LEASE_SECONDS < 2
     or REPORT_HEARTBEAT_SECONDS < 1
@@ -124,6 +138,7 @@ if (
     or REPORT_RECOVERY_INTERVAL_SECONDS < 1
     or REPORT_RESULT_TTL_SECONDS < 1
     or REPORT_SUMMARY_REFRESH_INTERVAL_SECONDS < 1
+    or IDEMPOTENCY_CLEANUP_INTERVAL_SECONDS < 1
 ):
     raise ImproperlyConfigured("Report and outbox lease, retry, batch, and interval settings are invalid")
 CELERY_BEAT_SCHEDULE = {
@@ -142,6 +157,10 @@ CELERY_BEAT_SCHEDULE = {
     "expire-report-results": {
         "task": "apps.reports.expire_report_results",
         "schedule": timedelta(seconds=REPORT_SUMMARY_REFRESH_INTERVAL_SECONDS),
+    },
+    "cleanup-expired-idempotency-records": {
+        "task": "apps.desk.cleanup_idempotency_records",
+        "schedule": timedelta(seconds=IDEMPOTENCY_CLEANUP_INTERVAL_SECONDS),
     },
 }
 STATIC_URL = "/static/"
@@ -172,13 +191,37 @@ CORS_ALLOWED_METHODS = ("GET", "POST", "OPTIONS")
 CORS_ALLOWED_HEADERS = ("authorization", "content-type", "idempotency-key", "x-csrftoken")
 if not set(CORS_ALLOWED_ORIGINS).issubset(CSRF_TRUSTED_ORIGINS):
     raise ImproperlyConfigured("Every credentialed CORS origin must also be a CSRF trusted origin")
+if IS_PRODUCTION:
+    local_origins = {"http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:8000"}
+    if (
+        not CSRF_TRUSTED_ORIGINS
+        or not CORS_ALLOWED_ORIGINS
+        or not WEBSOCKET_ALLOWED_ORIGINS
+        or set(CSRF_TRUSTED_ORIGINS) & local_origins
+        or set(CORS_ALLOWED_ORIGINS) & local_origins
+        or set(WEBSOCKET_ALLOWED_ORIGINS) & local_origins
+    ):
+        raise ImproperlyConfigured("Production requires explicit, non-local browser origin allow-lists")
 
 # Sessions are the only browser authentication mechanism.  Secure cookies
 # are enabled outside development; local HTTP remains usable in Compose.
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true" if not DEBUG else "false").lower() == "true"
-CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "true" if not DEBUG else "false").lower() == "true"
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true" if not IS_LOCAL_ENV else "false").lower() == "true"
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "true" if not IS_LOCAL_ENV else "false").lower() == "true"
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "true" if IS_PRODUCTION else "false").lower() == "true"
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", str(31_536_000 if IS_PRODUCTION else 0)))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = IS_PRODUCTION
+SECURE_HSTS_PRELOAD = IS_PRODUCTION
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+if IS_PRODUCTION and (not SESSION_COOKIE_SECURE or not CSRF_COOKIE_SECURE or not SECURE_SSL_REDIRECT or SECURE_HSTS_SECONDS < 1):
+    raise ImproperlyConfigured("Production requires HTTPS redirects, HSTS, and secure session/CSRF cookies")
+# TLS is commonly terminated by a trusted reverse proxy. Set this only there;
+# accepting arbitrary forwarded headers would let clients forge secure requests.
+if os.getenv("DJANGO_TRUST_X_FORWARDED_PROTO", "false").lower() == "true":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_AGE = int(os.getenv("SESSION_COOKIE_AGE", str(8 * 60 * 60)))
 SESSION_SAVE_EVERY_REQUEST = False
 AUTH_TOKEN_TTL_SECONDS = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", str(15 * 60)))
@@ -189,7 +232,7 @@ LOGIN_RATE_LIMIT_SECONDS = int(os.getenv("LOGIN_RATE_LIMIT_SECONDS", "60"))
 ASSISTANT_STREAM_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_STREAM_TIMEOUT_SECONDS", "15"))
 ASSISTANT_STREAM_MAX_CHUNKS = int(os.getenv("ASSISTANT_STREAM_MAX_CHUNKS", "32"))
 ASSISTANT_STREAM_MAX_OUTPUT_CHARS = int(os.getenv("ASSISTANT_STREAM_MAX_OUTPUT_CHARS", "4096"))
-ASSISTANT_STREAM_TOKEN_DELAY_SECONDS = float(os.getenv("ASSISTANT_STREAM_TOKEN_DELAY_SECONDS", "0.005"))
+ASSISTANT_STREAM_TOKEN_DELAY_SECONDS = float(os.getenv("ASSISTANT_STREAM_TOKEN_DELAY_SECONDS", "0.1"))
 if (
     ASSISTANT_STREAM_TIMEOUT_SECONDS <= 0
     or ASSISTANT_STREAM_MAX_CHUNKS <= 0
